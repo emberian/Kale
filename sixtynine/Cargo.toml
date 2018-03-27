@@ -1,0 +1,6 @@
+[package]
+name = "sixtynine"
+version = "0.1.0"
+authors = ["Corey Richardson <corey@octayn.net>"]
+
+[dependencies]

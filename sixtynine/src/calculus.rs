@@ -91,48 +91,107 @@ enum CtxEnt {
     Marker(u64),
 }
 
-type Context = Vec<CtxEnt>;
+type IType<T> = Ix<Type<T>>;
+
+struct Context {
+    list: Vec<CtxEnt>,
+}
+impl Context {
+    fn with(&self, e: CtxEnt) -> Context {
+        // lol
+        let mut new = self.list.clone();
+        new.push(e);
+        Context {
+            list: new
+        }
+    }
+    fn without(&self, idx: usize) -> Context {
+        // also lol but not as much
+        let mut new = self.list.clone();
+        new.remove(new.len() - idx + 1);
+        Context {
+            list: new
+        }
+    }
+    fn push(&mut self, e: CtxEnt) {
+        self.list.push(e);
+    }
+    fn pop(&mut self) -> Option<CtxEnt> {
+        self.list.pop()
+    }
+    fn peek(&self) -> Option<&CtxEnt> {
+        self.list.last()
+    }
+    fn peek_mut(&mut self) -> Option<&mut CtxEnt> {
+        self.list.last_mut()
+    }
+    fn iter(&self) -> impl Iterator<Item=&CtxEnt> {
+        self.list.iter().rev()
+    }
+    fn iter_mut(&mut self) -> impl Iterator<Item=&mut CtxEnt> {
+        self.list.iter_mut().rev()
+    }
+    fn find_equation(&self, n: Name<U>) -> Option<IType<MT>> {
+        for itm in self.iter() {
+            match itm {
+                &CtxEnt::Equation(n2, ty) if n == n2 => return Some(ty.clone()),
+                _ => continue
+            }
+        }
+        None
+    }
+    fn find_solution(&self, n: Name<EX>) -> Option<(usize, IType<MT>)> {
+        for (idx, itm) in self.iter().enumerate() {
+            match itm {
+                &CtxEnt::Solved(n2, _, ty) if n == n2 => return Some((idx, ty.clone())),
+                _ => continue
+            }
+        }
+        None
+    }
+
+    fn apply_complete(&self, omega: &Context) -> Context {
+        let mut new_ctx = Context { list: vec![] };
+        for (omega, gamma) in omega.iter().zip(self.iter()) { match (omega, gamma) {
+            
+        } }
+    }
+}
 
 struct Tcx {
-    real_context: Context,
+    ctx: Context,
 }
 
 impl TCx {
-    fn push_ctx(&mut self, e: CtxEnt);
-    fn pop_ctx(&mut self) -> CtxEnt;
+    fn push_ctx(&self, e: CtxEnt) -> TCx;
+    fn pop_ctx(&self) -> TCx;
     fn peek_ctx(&self) -> &CtxEnt;
-    fn ctx_has_eqn(&self, n: Name<U>) -> Option(Ix<Type<FT>>) {
-        for ent in self.real_context.iter().rev() {
-            match ent {
-                CtxEnt::Equation(n_, t) if n == n_ => return Some(t.clone()),
-                _ => continue
-            }
-        }
-        None
-    }
-    fn ctx_has_sln(&self, n: Name<EX>) -> Option(Ix<Type<FT>>, impl Iterator<Item=&CtxEnt>) {
-        for ent in self.real_context.iter().rev() {
-            match ent {
-                CtxEnt::Solved(n_, _, t) if n == n_ => return Some(t.clone()),
-                _ => continue
-            }
-        }
-        None
-    }
 
-    fn apply_ctx(&self, to: Ix<Type<FT>>) -> Type<FT> {
+    fn apply_ctx<T>(&self, to: IType<T>) -> IType<T> {
         match *to {
-            &Type::One => Type::One,
-            &Type::Var(GVar::Uni(n)) => match self.ctx_has_eqn(n) {
-                Some(t) => self.apply_ctx(&*t),
+            Type::One => to.clone(),
+            Type::Var(GVar::Uni(n)) => match self.ctx.find_equation(n) {
+                Some(t) => self.apply_ctx(t),
                 None => to.clone()
             },
-            &Type::Var(GVar::Exi(n)) => match self.ctx_has_sln(n) {
-                Some(t) => 
-            }
+            Type::Var(GVar::Exi(n)) => match self.ctx.find_solution(n) {
+                Some((idx, t)) => Tcx { 
+                    ctx: self.ctx.without(idx)
+                }.apply_ctx(t),
+                None => to.clone()
+            },
+            Type::Arr(ref a, ref b) => Type::Arr(self.apply_ctx(a), self.apply_ctx(b)).mk(),
+            Type::Sum(ref a, ref b) => Type::Sum(self.apply_ctx(a), self.apply_ctx(b)).mk(),
+            Type::Prd(ref a, ref b) => Type::Prd(self.apply_ctx(a), self.apply_ctx(b)).mk(),
+            Type::Imp(ref a, ref b) => Type::Imp(self.apply_ctx(a), self.apply_ctx(b)).mk(),
+            Type::Wth(ref a, ref b) => Type::Wth(self.apply_ctx(a), self.apply_ctx(b)).mk(),
+
+            Type::All(n, s, ref t) => Type::All(n, s, self.apply_ctx(t)).mk(),
+            Type::Exi(n, s, ref t) => Type::Exi(n, s, self.apply_ctx(t)).mk(),
+            Zero => to.clone(),
+            Succ(ref t) => to.clone(),
         }
     }
     fn instantiate(&mut self, n: Name<EX>, )
     fn check_equation(&mut self, t1: Type<MT>, t2: Type<MT>, s: Sort) -> Ctx;
-
 }

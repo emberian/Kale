@@ -80,18 +80,18 @@ enum Type<M> {
     Imp(Prop<Type<MT>>, Ix<Type<FT>>),
     Wth(Prop<Type<MT>>, Ix<Type<FT>),
 }
+type IType<T> = Ix<Type<T>>;
+
 enum CtxEnt {
     TypeDecl(Name<U>, Sort),
-    VarDecl(Name<E>, Type<FT>, Polarity),
+    VarDecl(Name<E>, IType<FT>, Polarity),
 
     Unsolved(Name<EX>, Sort),
-    Solved(Name<EX>, Sort, Type<MT>),
-    Equation(Name<U>, Type<MT>),
+    Solved(Name<EX>, Sort, IType<MT>),
+    Equation(Name<U>, IType<MT>),
 
     Marker(u64),
 }
-
-type IType<T> = Ix<Type<T>>;
 
 struct Context {
     list: Vec<CtxEnt>,
@@ -150,11 +150,80 @@ impl Context {
         None
     }
 
-    fn apply_complete(&self, omega: &Context) -> Context {
+    fn apply_to<T>(&self, to: IType<T>) -> IType<T> {
+        match *to {
+            Type::One => to.clone(),
+            Type::Var(GVar::Uni(n)) => match self.find_equation(n) {
+                Some(t) => self.apply_to(t),
+                None => to.clone()
+            },
+            Type::Var(GVar::Exi(n)) => match self.find_solution(n) {
+                Some((idx, t)) => self.ctx.without(idx).apply_to(t),
+                None => to.clone()
+            },
+            Type::Arr(ref a, ref b) => Type::Arr(self.apply_to(a), self.apply_to(b)).mk(),
+            Type::Sum(ref a, ref b) => Type::Sum(self.apply_to(a), self.apply_to(b)).mk(),
+            Type::Prd(ref a, ref b) => Type::Prd(self.apply_to(a), self.apply_to(b)).mk(),
+            Type::Imp(ref a, ref b) => Type::Imp(self.apply_to(a), self.apply_to(b)).mk(),
+            Type::Wth(ref a, ref b) => Type::Wth(self.apply_to(a), self.apply_to(b)).mk(),
+
+            Type::All(n, s, ref t) => Type::All(n, s, self.apply_to(t)).mk(),
+            Type::Exi(n, s, ref t) => Type::Exi(n, s, self.apply_to(t)).mk(),
+            Zero => to.clone(),
+            Succ(ref t) => to.clone(),
+        }
+    }
+
+    fn apply_to_context(&self, omega: &Context) -> Option<Context> {
+        use CtxEnt::*;
+        let mut omega = self.clone();
+        let mut gamma = gamma.clone();
         let mut new_ctx = Context { list: vec![] };
-        for (omega, gamma) in omega.iter().zip(self.iter()) { match (omega, gamma) {
-            
-        } }
+        let mut to_apply = vec![];
+        while (omega.len() && omega.len() == gamma.len()) {
+            let o = omega.pop().unwrap();
+            let g = gamma.pop().unwrap();
+            match (o, g) {
+                (VarDecl(n1, t1, p1), VarDecl(n2, t2, p2)) if n1 == n2 => {
+                    if p1 == p2 {
+                        let t2_ = omega.apply_to(t2.clone());
+                        if t1 == t2_ {
+                            new_ctx.push(VarDecl(n1, t1, p1));
+                            continue;
+                        }
+                    }
+                },
+                (TypeDecl(n1, s1), TypeDecl(n2, s2)) if n1 == n2 => {
+                    if s1 == s2 {
+                        new_ctx.push(TypeDecl(n1, s1));
+                        continue;
+                    }
+                }
+                (Marker(m1), Marker(m2)) if m1 == m2 => continue,
+                (Equation(n1, t1), Equation(n2, t2)) if n1 == n2 => {
+                    let t1 = omega.apply_to(t1);
+                    let t2 = gamma.apply_to(t2);
+                    if t1 == t2 {
+                        let omega_ = omega.subst_for(t1, n1);
+                        to_apply.push(omega.subst_for(t1, n1));
+                        continue;
+                    }
+                },
+                (Solved(n1, s1, _), g) => {
+                    match g {
+                        Solved(n2, s2, _) if n1 == n2 && s1 == s2 => continue,
+                        Unsolved(n2, s2) if n1 == n2 && s1 == s2 => continue,
+                        _ => { gamma.push(g); continue }
+                    }
+                },
+                _ => { }
+            }
+            return None;
+        }
+        for ctx in to_apply {
+            new_ctx = ctx.apply_to_context(new_ctx);
+        }
+        Some(new_ctx)
     }
 }
 
@@ -166,32 +235,6 @@ impl TCx {
     fn push_ctx(&self, e: CtxEnt) -> TCx;
     fn pop_ctx(&self) -> TCx;
     fn peek_ctx(&self) -> &CtxEnt;
-
-    fn apply_ctx<T>(&self, to: IType<T>) -> IType<T> {
-        match *to {
-            Type::One => to.clone(),
-            Type::Var(GVar::Uni(n)) => match self.ctx.find_equation(n) {
-                Some(t) => self.apply_ctx(t),
-                None => to.clone()
-            },
-            Type::Var(GVar::Exi(n)) => match self.ctx.find_solution(n) {
-                Some((idx, t)) => Tcx { 
-                    ctx: self.ctx.without(idx)
-                }.apply_ctx(t),
-                None => to.clone()
-            },
-            Type::Arr(ref a, ref b) => Type::Arr(self.apply_ctx(a), self.apply_ctx(b)).mk(),
-            Type::Sum(ref a, ref b) => Type::Sum(self.apply_ctx(a), self.apply_ctx(b)).mk(),
-            Type::Prd(ref a, ref b) => Type::Prd(self.apply_ctx(a), self.apply_ctx(b)).mk(),
-            Type::Imp(ref a, ref b) => Type::Imp(self.apply_ctx(a), self.apply_ctx(b)).mk(),
-            Type::Wth(ref a, ref b) => Type::Wth(self.apply_ctx(a), self.apply_ctx(b)).mk(),
-
-            Type::All(n, s, ref t) => Type::All(n, s, self.apply_ctx(t)).mk(),
-            Type::Exi(n, s, ref t) => Type::Exi(n, s, self.apply_ctx(t)).mk(),
-            Zero => to.clone(),
-            Succ(ref t) => to.clone(),
-        }
-    }
     fn instantiate(&mut self, n: Name<EX>, )
     fn check_equation(&mut self, t1: Type<MT>, t2: Type<MT>, s: Sort) -> Ctx;
 }
